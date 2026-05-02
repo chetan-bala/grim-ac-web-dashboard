@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API = process.env.REACT_APP_API_URL || 'https://your-backend.onrender.com';
+const API = process.env.REACT_APP_API_URL || 'https://grim-backend.onrender.com';
 
 function Dashboard() {
   const [recordings, setRecordings] = useState([]);
@@ -27,35 +27,45 @@ function Dashboard() {
       const res = await axios.get(API + '/api/recordings', {
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       });
-      setRecordings(res.data);
-    } catch (err) { console.error(err); }
+      setRecordings(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch recordings:', err.message);
+    }
   };
 
   const handleInvite = async (e) => {
     e.preventDefault();
+    setMessage('');
     try {
       await axios.post(API + '/api/invite', { email: inviteEmail }, {
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       });
       setMessage('Invite sent to ' + inviteEmail);
       setInviteEmail('');
-    } catch (err) { setMessage('Error: ' + (err.response?.data?.error || 'Failed')); }
+    } catch (err) {
+      setMessage('Error: ' + (err.response?.data?.error || 'Failed to send invite'));
+    }
   };
 
   const handleLinkGrim = async (e) => {
     e.preventDefault();
+    setMessage('');
     try {
       await axios.post(API + '/api/link-grim', { serverUrl: grimUrl, apiKey: grimKey }, {
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       });
       setMessage('Grim AC linked successfully!');
-    } catch (err) { setMessage('Error: ' + (err.response?.data?.error || 'Failed')); }
+    } catch (err) {
+      setMessage('Error: ' + (err.response?.data?.error || 'Failed to link'));
+    }
   };
 
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
 
   const renderReplay = (recording) => {
-    if (!recording || !recording.recording_data) return <p>No replay data</p>;
+    if (!recording || !recording.recording_data || !Array.isArray(recording.recording_data)) {
+      return <p>No replay data available</p>;
+    }
     const data = recording.recording_data;
     return (
       <div className="replay-container">
@@ -66,7 +76,7 @@ function Dashboard() {
           <div style={{ marginTop: '20px', height: '250px', overflowY: 'auto', background: '#1a1f2e', padding: '10px', borderRadius: '6px' }}>
             {data.map((p, i) => (
               <div key={i} style={{ fontSize: '12px', marginBottom: '5px', color: '#94a3b8' }}>
-                {i}s: ({p.x.toFixed(2)}, {p.y.toFixed(2)}, {p.z.toFixed(2)}) Yaw: {p.yw.toFixed(1)} Pitch: {p.pt.toFixed(1)}
+                {i}s: ({Number(p.x).toFixed(2)}, {Number(p.y).toFixed(2)}, {Number(p.z).toFixed(2)}) Yaw: {Number(p.yw).toFixed(1)} Pitch: {Number(p.pt).toFixed(1)}
               </div>
             ))}
           </div>
@@ -85,23 +95,30 @@ function Dashboard() {
         </div>
       </div>
 
-      {message && <div className={message.includes('Error') ? 'error' : 'success'}>{message}</div>}
+      {message && (
+        <div className={message.includes('Error') ? 'error' : 'success'} style={{ marginTop: '10px' }}>
+          {message}
+        </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginTop: '20px' }}>
         <div>
           <div className="card">
             <h2>Flag Recordings</h2>
             <div className="recording-list">
-              {recordings.map(r => (
-                <div key={r.id} className="recording-item" onClick={() => setSelectedRecording(r)} style={{ cursor: 'pointer' }}>
-                  <div>
-                    <strong>{r.player_name}</strong> flagged <span style={{ color: '#7c3aed' }}>{r.check_name}</span>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(r.timestamp).toLocaleString()}</div>
+              {recordings.length === 0 ? (
+                <p style={{ color: '#64748b' }}>No recordings yet. Player flags will appear here when detected by Grim AC.</p>
+              ) : (
+                recordings.map(r => (
+                  <div key={r.id} className="recording-item" onClick={() => setSelectedRecording(r)} style={{ cursor: 'pointer' }}>
+                    <div>
+                      <strong>{r.player_name}</strong> flagged <span style={{ color: '#7c3aed' }}>{r.check_name}</span>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(r.timestamp).toLocaleString()}</div>
+                    </div>
+                    <button className="btn" onClick={e => { e.stopPropagation(); setSelectedRecording(r); }}>View</button>
                   </div>
-                  <button className="btn" onClick={e => { e.stopPropagation(); setSelectedRecording(r); }}>View</button>
-                </div>
-              ))}
-              {recordings.length === 0 && <p style={{ color: '#64748b' }}>No recordings yet. Player flags will appear here.</p>}
+                ))
+              )}
             </div>
           </div>
 
@@ -139,7 +156,7 @@ function Dashboard() {
               <button type="submit" className="btn" style={{ width: '100%' }}>Link Server</button>
             </form>
             <p style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
-              Add this to your plugin config.yml: backend-url: {grimUrl || 'YOUR_BACKEND_URL'}
+              Add to plugin config.yml: backend-url: {grimUrl || 'YOUR_BACKEND_URL'}
             </p>
           </div>
         </div>
