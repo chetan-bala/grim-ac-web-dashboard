@@ -15,18 +15,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Validate required env vars
-const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'JWT_SECRET'];
-requiredEnvVars.forEach(varName => {
-  if (!process.env[varName]) {
-    console.error(`ERROR: Missing required env var ${varName}`);
-  }
-});
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_KEY || ''
-);
+let supabase = null;
+if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+  supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+}
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -44,17 +36,16 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { email, password, serverName } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   try {
     const { data: existing } = await supabase.from('users').select('id').eq('email', email).single();
     if (existing) return res.status(409).json({ error: 'Email already registered' });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const { data, error } = await supabase.from('users').insert({
-      email,
+      email: email,
       password_hash: passwordHash,
       server_name: serverName || null
     }).select().single();
@@ -69,10 +60,9 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   try {
     const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -88,10 +78,9 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/recordings', authenticateToken, async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { playerUuid, playerName, checkName, verbose, timestamp, duration, recordingData } = req.body;
-  if (!playerUuid || !recordingData) {
-    return res.status(400).json({ error: 'Missing required fields: playerUuid, recordingData' });
-  }
+  if (!playerUuid || !recordingData) return res.status(400).json({ error: 'Missing required fields' });
   try {
     const { data, error } = await supabase.from('recordings').insert({
       user_id: req.user.userId,
@@ -112,11 +101,10 @@ app.post('/api/recordings', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/recordings', authenticateToken, async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   try {
     const { data, error } = await supabase.from('recordings')
-      .select('*')
-      .eq('user_id', req.user.userId)
-      .order('timestamp', { ascending: false });
+      .select('*').eq('user_id', req.user.userId).order('timestamp', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
   } catch (err) {
@@ -125,12 +113,10 @@ app.get('/api/recordings', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/recordings/:id', authenticateToken, async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   try {
     const { data, error } = await supabase.from('recordings')
-      .select('*')
-      .eq('id', req.params.id)
-      .eq('user_id', req.user.userId)
-      .single();
+      .select('*').eq('id', req.params.id).eq('user_id', req.user.userId).single();
     if (error || !data) return res.status(404).json({ error: 'Recording not found' });
     res.json(data);
   } catch (err) {
@@ -139,9 +125,9 @@ app.get('/api/recordings/:id', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/invite', authenticateToken, async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
-
   try {
     const { data: existing } = await supabase.from('users').select('id').eq('email', email).single();
     const invitedUserId = existing ? existing.id : null;
@@ -180,6 +166,7 @@ app.post('/api/invite', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/link-grim', authenticateToken, async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { serverUrl, apiKey } = req.body;
   try {
     const { error } = await supabase.from('users').update({
@@ -196,5 +183,4 @@ app.post('/api/link-grim', authenticateToken, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
 });
