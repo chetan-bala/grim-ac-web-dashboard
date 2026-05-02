@@ -7,15 +7,15 @@ services:
     startCommand: cd backend && node server.js
     envVars:
       - key: SUPABASE_URL
-        sync: false
+        value: https://igrsapeyxgmkjhadfrir.supabase.co
       - key: SUPABASE_SERVICE_KEY
-        sync: false
+        value: PASTE_YOUR_SERVICE_ROLE_KEY_HERE
       - key: JWT_SECRET
-        generateValue: true
+        value: grim-ac-secret-key-2026
       - key: EMAIL_USER
-        sync: false
+        value: your-email@gmail.com
       - key: EMAIL_PASS
-        sync: false
+        value: your-app-password
       - key: FRONTEND_URL
         value: https://grim-frontend.onrender.com
 
