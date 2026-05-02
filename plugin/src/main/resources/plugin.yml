@@ -1,0 +1,7 @@
+name: GrimWebDashboard
+version: 1.0.0
+main: com.grimweb.GrimWebPlugin
+api-version: 1.21
+depend: [GrimAC]
+description: Grim AC web dashboard integration
+author: GrimWeb
