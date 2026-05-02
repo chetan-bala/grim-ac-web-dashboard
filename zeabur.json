@@ -1,0 +1,24 @@
+{
+    "experimentalServices": {
+        "frontend": {
+            "entrypoint": "frontend",
+            "routePrefix": "/",
+            "framework": "create-react-app",
+            "env": {
+                "REACT_APP_API_URL": "$ZEABUR_URL/_/backend"
+            }
+        },
+        "backend": {
+            "entrypoint": "backend",
+            "routePrefix": "/_/backend",
+            "env": {
+                "SUPABASE_URL": "",
+                "SUPABASE_SERVICE_KEY": "",
+                "JWT_SECRET": "",
+                "EMAIL_USER": "",
+                "EMAIL_PASS": "",
+                "FRONTEND_URL": "$ZEABUR_URL"
+            }
+        }
+    }
+}
