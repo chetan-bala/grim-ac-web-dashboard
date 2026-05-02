@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
@@ -15,10 +14,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-let supabase = null;
-if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
-  supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-}
+// In-memory storage for local testing (no database needed)
+const users = new Map();
+const recordings = new Map();
+const invites = new Map();
+let idCounter = 1;
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -32,155 +32,109 @@ const authenticateToken = (req, res, next) => {
 };
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), mode: 'local-testing' });
 });
 
 app.post('/api/auth/register', async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { email, password, serverName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  try {
-    const { data: existing } = await supabase.from('users').select('id').eq('email', email).single();
-    if (existing) return res.status(409).json({ error: 'Email already registered' });
-
-    const passwordHash = await bcrypt.hash(password, 10);
-    const { data, error } = await supabase.from('users').insert({
-      email: email,
-      password_hash: passwordHash,
-      server_name: serverName || null
-    }).select().single();
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const token = jwt.sign({ userId: data.id, email: data.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: data.id, email: data.email, serverName: data.server_name } });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  
+  // Check if user exists
+  for (let u of users.values()) {
+    if (u.email === email) return res.status(409).json({ error: 'Email already registered' });
   }
+  
+  const passwordHash = await bcrypt.hash(password, 10);
+  const userId = 'user_' + idCounter++;
+  users.set(userId, {
+    id: userId,
+    email,
+    password_hash: passwordHash,
+    server_name: serverName || null
+  });
+  
+  const token = jwt.sign({ userId, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, user: { id: userId, email, serverName } });
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  try {
-    const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, serverName: user.server_name } });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  
+  let user = null;
+  for (let u of users.values()) {
+    if (u.email === email) { user = u; break; }
   }
+  
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+  
+  const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, user: { id: user.id, email: user.email, serverName: user.server_name } });
 });
 
-app.post('/api/recordings', authenticateToken, async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
+app.post('/api/recordings', authenticateToken, (req, res) => {
   const { playerUuid, playerName, checkName, verbose, timestamp, duration, recordingData } = req.body;
   if (!playerUuid || !recordingData) return res.status(400).json({ error: 'Missing required fields' });
-  try {
-    const { data, error } = await supabase.from('recordings').insert({
-      user_id: req.user.userId,
-      player_uuid: playerUuid,
-      player_name: playerName || 'Unknown',
-      check_name: checkName || 'Unknown',
-      verbose: verbose || '',
-      timestamp: new Date(timestamp || Date.now()).toISOString(),
-      duration: duration || 30,
-      recording_data: recordingData
-    }).select().single();
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, id: data.id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  
+  const recordingId = 'rec_' + idCounter++;
+  recordings.set(recordingId, {
+    id: recordingId,
+    user_id: req.user.userId,
+    player_uuid: playerUuid,
+    player_name: playerName || 'Unknown',
+    check_name: checkName || 'Unknown',
+    verbose: verbose || '',
+    timestamp: new Date(timestamp || Date.now()).toISOString(),
+    duration: duration || 30,
+    recording_data: recordingData
+  });
+  
+  res.json({ success: true, id: recordingId });
 });
 
-app.get('/api/recordings', authenticateToken, async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
-  try {
-    const { data, error } = await supabase.from('recordings')
-      .select('*').eq('user_id', req.user.userId).order('timestamp', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/recordings', authenticateToken, (req, res) => {
+  const userRecordings = Array.from(recordings.values())
+    .filter(r => r.user_id === req.user.userId)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  res.json(userRecordings);
 });
 
-app.get('/api/recordings/:id', authenticateToken, async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
-  try {
-    const { data, error } = await supabase.from('recordings')
-      .select('*').eq('id', req.params.id).eq('user_id', req.user.userId).single();
-    if (error || !data) return res.status(404).json({ error: 'Recording not found' });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+app.get('/api/recordings/:id', authenticateToken, (req, res) => {
+  const recording = recordings.get(req.params.id);
+  if (!recording || recording.user_id !== req.user.userId) {
+    return res.status(404).json({ error: 'Recording not found' });
   }
+  res.json(recording);
 });
 
-app.post('/api/invite', authenticateToken, async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
+app.post('/api/invite', authenticateToken, (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
-  try {
-    const { data: existing } = await supabase.from('users').select('id').eq('email', email).single();
-    const invitedUserId = existing ? existing.id : null;
-
-    const { data, error } = await supabase.from('invites').insert({
-      inviter_id: req.user.userId,
-      invited_email: email,
-      invited_user_id: invitedUserId,
-      status: 'pending'
-    }).select().single();
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransporter({
-          service: 'gmail',
-          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-        });
-        const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/accept-invite?id=${data.id}`;
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: email,
-          subject: 'Grim AC Dashboard Invitation',
-          html: `<p>You've been invited to join a Grim AC Dashboard.</p><p><a href="${inviteLink}">Accept Invitation</a></p>`
-        });
-      } catch (emailErr) {
-        console.error('Email error:', emailErr.message);
-      }
-    }
-
-    res.json({ success: true, inviteId: data.id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  
+  const inviteId = 'inv_' + idCounter++;
+  invites.set(inviteId, {
+    id: inviteId,
+    inviter_id: req.user.userId,
+    invited_email: email,
+    status: 'pending'
+  });
+  
+  res.json({ success: true, inviteId });
 });
 
-app.post('/api/link-grim', authenticateToken, async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'Database not configured' });
+app.post('/api/link-grim', authenticateToken, (req, res) => {
   const { serverUrl, apiKey } = req.body;
-  try {
-    const { error } = await supabase.from('users').update({
-      grim_server_url: serverUrl || null,
-      grim_api_key: apiKey || null
-    }).eq('id', req.user.userId);
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  const user = users.get(req.user.userId);
+  if (user) {
+    user.grim_server_url = serverUrl || null;
+    user.grim_api_key = apiKey || null;
   }
+  res.json({ success: true });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} (local testing mode - no database needed)`);
 });
