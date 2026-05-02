@@ -9,13 +9,13 @@ services:
       - key: SUPABASE_URL
         value: https://igrsapeyxgmkjhadfrir.supabase.co
       - key: SUPABASE_SERVICE_KEY
-        value: PASTE_YOUR_SERVICE_ROLE_KEY_HERE
+        sync: false
       - key: JWT_SECRET
-        value: grim-ac-secret-key-2026
+        value: grim-ac-render-secret-2026
       - key: EMAIL_USER
-        value: your-email@gmail.com
+        sync: false
       - key: EMAIL_PASS
-        value: your-app-password
+        sync: false
       - key: FRONTEND_URL
         value: https://grim-frontend.onrender.com
 
