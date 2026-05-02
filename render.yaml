@@ -1,19 +1,10 @@
 services:
-  - type: static_site
-    name: grim-frontend
-    plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/build
-    envVars:
-      - key: REACT_APP_API_URL
-        value: https://grim-backend.onrender.com
-
   - type: web
     name: grim-backend
     env: node
     plan: free
     buildCommand: cd backend && npm install
-    startCommand: node backend/server.js
+    startCommand: cd backend && node server.js
     envVars:
       - key: SUPABASE_URL
         sync: false
@@ -27,3 +18,12 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://grim-frontend.onrender.com
+
+  - type: static_site
+    name: grim-frontend
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://grim-backend.onrender.com
